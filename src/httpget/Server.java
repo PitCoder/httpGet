@@ -37,7 +37,7 @@ public class Server{
         System.out.println("Downloading: " + page);
         System.out.println("Saving to directory: " + directory);
         //String pagina = entrada.readLine().substring(2);  // Ofset desconocido
-        this.download = new Download(page, directory, "html");
+        this.download = new Download(page, directory, "href");
         this.download.setMainPagel(page);
         //descarga.setPaginaPrincipal(pagina);
         flag = false;           

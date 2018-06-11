@@ -7,6 +7,8 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.jsoup.Jsoup; 
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -18,7 +20,7 @@ public class Download implements Runnable{
     private ArrayList<String> webextensions = new ArrayList<>();
     private String webdir;
     private ConcurrentLinkedQueue<Resource> urlQueue = new ConcurrentLinkedQueue<>();
-    private ConcurrentHashMap<String, Boolean> register = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Resource> register = new ConcurrentHashMap<>();
     
      /*Methods to keep a register of already downloaded web pages */
     public Download(String page, String dir, String type){
@@ -38,7 +40,7 @@ public class Download implements Runnable{
         anchor.setDir(dir + "index.html");
         anchor.setType(type);
         this.urlQueue.add(anchor);
-        register.put(page, Boolean.TRUE);
+        register.put(page, anchor);
     }
     
     public void setWebPage(String page){
@@ -58,15 +60,13 @@ public class Download implements Runnable{
       exit(0);
     }
     else{
-      /* Descarga de la pagina */
-      //System.out.println("Downloading: " + resource.getUrl() + "...");
       downloadResource(resource);
     }
   }
   
   private void verifyInRegister(Resource resource){
       if(register.get(resource.getUrl()) == null){
-         register.put(resource.getUrl(), Boolean.TRUE);
+         register.put(resource.getUrl(), resource);
          this.urlQueue.add(resource);
       }
   }
@@ -78,6 +78,7 @@ public class Download implements Runnable{
        String dir = resource.getDir();
        String type = resource.getType();
        print("Fetching %s...", url);
+       System.out.println("Actual dir: " + dir);
 
        System.out.println(url);
        try{
@@ -90,33 +91,9 @@ public class Download implements Runnable{
             Elements links = document.select("a[href]");
             links.addAll(document.select("link[href]"));
             
-             for(Element link: links){
-                Resource new_resource = new Resource();
-                String attr = link.attr("abs:href");
-                System.out.println("Href found: " + attr);
-                if(false){
-                    System.out.println("Web page founded");
-                    String name = getPageName(attr);
-                    String new_dir = dir.substring(0,dir.lastIndexOf("/")+1) + name;
-                    createPageDir(new_dir + "/");
-                    new_resource.setUrl(attr);
-                    new_resource.setDir(new_dir);
-                    new_resource.setType("html");
-                }
-                else{
-                    System.out.println("External link founded");
-                    String new_dir = dir.substring(0, dir.lastIndexOf("/")+1) + "External/" + getPageName(attr);
-                    System.out.println(new_dir);
-                    new_resource.setUrl(attr);
-                    new_resource.setDir(new_dir);
-                    new_resource.setType("href");
-                }
-                verifyInRegister(new_resource);
-                link.attr("href", new_resource.getDir());
-                new Client().justConnect();
-             }
-             
-                   for(Element source : sources){
+            
+            for(Element source : sources){
+                System.out.println("Source:");
                 Resource new_resource = new Resource();
                 String attr = source.attr("abs:src");
                 String append = "";
@@ -150,26 +127,42 @@ public class Download implements Runnable{
                         append = "Miscellaneous";
                         break;
                  }
-
+                
+                String new_dir = dir.substring(0,dir.lastIndexOf("/")+1) + append + getSrcName(attr);
+                System.out.println("Source founded, Direccion:" + new_dir);
                 new_resource.setUrl(attr);
-                new_resource.setDir(dir.substring(0,dir.lastIndexOf("/")+1) + append + getSrcName(attr));
+                new_resource.setDir(new_dir);
                 new_resource.setType("source");
-                System.out.println("Verifing");
                 verifyInRegister(new_resource);
-                System.out.println("End Verfing");
-                //System.out.println(register.get(attr));
-                source.attr("src", new_resource.getDir());
+                source.attr("src", register.get(attr).getDir());
                 new Client().justConnect();
-            }  
-
+            } 
             
+             for(Element link: links){
+                Resource new_resource = new Resource();
+                String attr = link.attr("abs:href");
+
+                String name = getPageName(attr);
+                System.out.println("This is name:" + name);
+                String new_dir = dir.substring(0, dir.lastIndexOf("/")+1) + "External/" + name;
+                System.out.println("External link founded, Direccion:" + new_dir);
+                new_resource.setUrl(attr);
+                new_resource.setDir(new_dir);
+                new_resource.setType("href");
+                    
+                verifyInRegister(new_resource);
+                System.out.println("Dir retrived: " + register.get(attr).getDir());
+                link.attr("href", register.get(attr).getDir());  
+                new Client().justConnect();
+             }
+              
              switch(type){
-                 case "html":
-                        System.out.println(dir);
-                        String html = document.html();
-                        PrintWriter out = new PrintWriter(dir);
-                        out.println(html);
-                        out.close();
+                 case "href":
+                    System.out.println(dir);
+                    String html = document.html();
+                    PrintWriter out = new PrintWriter(dir);
+                    out.println(html);
+                    out.close();
                      break;
                  default:
                      System.out.println(dir);
@@ -179,7 +172,6 @@ public class Download implements Runnable{
        }
        catch(Exception e){
            e.printStackTrace();
-           System.out.println("It is a binary file :v");
            System.out.println(dir);
            saveSource(dir,url);
        }
@@ -222,7 +214,7 @@ public class Download implements Runnable{
         if(href.length() > 0){    
             //Extract the name of the image from the src attribute
             int indexname = href.lastIndexOf("/");
-            if(indexname == href.length()){
+            if(indexname == href.length()-1){
                 href = href.substring(1, indexname);
             }
             indexname = href.lastIndexOf("/");
@@ -262,7 +254,6 @@ public class Download implements Runnable{
             try{
                 URL url = new URL(src);
                 HttpURLConnection httpcon = (HttpURLConnection) url.openConnection();
-                httpcon.setConnectTimeout(3000);
                 httpcon.addRequestProperty("User-Agent", "Mozilla/4.0");
                 InputStream in = httpcon.getInputStream();
                 OutputStream out = new BufferedOutputStream(new FileOutputStream(folder));
